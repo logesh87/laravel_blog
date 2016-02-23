@@ -3,11 +3,11 @@
     'use strict';
 
     angular
-        .module('authApp')
+        .module('blogApp')
         .controller('AuthController', AuthController);
 
 
-    function AuthController($auth, $state, $http) {
+    function AuthController($auth, $state, $http, $window) {
 
         var vm = this;
             
@@ -17,12 +17,9 @@
                 email: vm.email,
                 password: vm.password
             }
-            
-            // Use Satellizer's $auth service to login
-            $auth.login(credentials).then(function(data) {
-
-                // If login is successful, redirect to the users state
-                $state.go('users', {});
+                        
+            $auth.login(credentials).then(function(data) {                
+                $state.go('posts', {});
             });
         }
 
@@ -35,21 +32,14 @@
                 password_confirmation: vm.password_confirmation
             };
 
-            $auth.signup(credentials).then(function(res) {            
-                
-                if (res.data.token) {                    
-                    $auth.login(credentials).then(function(data) {                        
-                        $state.go('users', {});
-                    });
-                }else{
-                    console.log(res.data);
-                }
-
-            }, function(error) {
-
-                vm.error = error;
-
+            $auth.signup(credentials).then(function(res) {                            
+                $state.go('posts', {});
             });
+        }
+
+
+        vm.logout = function(){
+            $auth.logout();
         }
 
     }

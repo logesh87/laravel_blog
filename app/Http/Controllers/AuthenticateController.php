@@ -2,92 +2,85 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-
-use App\Http\Requests;
-use App\Http\Controllers\Controller;
-use JWTAuth;
-use Tymon\JWTAuth\Exceptions\JWTException;
-use App\User;
+use Hash;
+use Config;
 use Validator;
+use Firebase\JWT\JWT;
+use Illuminate\Http\Request;
+use GuzzleHttp;
+use GuzzleHttp\Subscriber\Oauth\Oauth1;
+use App\User;
 
-class AuthenticateController extends Controller
-{
-    public function __construct(){
-
-    	// Apply the jwt.auth middleware to all methods in this controller
-       // except for the authenticate method. We don't want to prevent
-       // the user from retrieving their token if they don't already have it
-        $this->middleware('jwt.auth', ['except' => ['authenticate', 'signup']]);
-
-    }
+class AuthenticateController extends Controller{
 
     public function index(){
-    	// Retrieve all the users in the database and return them
 	    $users = User::all();
 	    return $users;
     }
 
+    protected function createToken($user){
 
-    protected function signup(Request $request)
-    {     
+        $payload = [
+            'sub' => $user->id,
+            'iat' => time(),
+            'exp' => time() + (2 * 7 * 24 * 60 * 60)
+        ];
+        return JWT::encode($payload, Config::get('app.token_secret'));
+    }
 
-         $validator =  Validator::make($request->all(), [
-            'name' => 'required|max:255',
-            'email' => 'required|email|max:255|unique:users',
-            'password' => 'required|confirmed|min:6',
-        ]);
 
-        if ($validator->fails()) {
-            return $validator->errors();
+    
+    public function unlink(Request $request, $provider){
+
+        $user = User::find($request['user']['sub']);
+        if (!$user)
+        {
+            return response()->json(['message' => 'User not found']);
         }
-
-
-        $user = User::where('email', '=', $request['email'])->first(); 
-
-        if ($user === null) {
-            
-            User::create([
-                'name' => $request['name'],
-                'email' => $request['email'],
-                'password' => bcrypt($request['password'])
-            ]);
-
-            $credentials = $request->only('email', 'password');
-
-            try {
-                // verify the credentials and create a token for the user
-                if (! $token = JWTAuth::attempt($credentials)) {
-                    return response()->json(['error' => 'invalid_credentials'], 401);
-                }
-            } catch (JWTException $e) {
-                // something went wrong
-                return response()->json(['error' => 'could_not_create_token'], 500);
-            }
-
-            return response()->json(compact('token'));
-
-        }else{
-            return response()->json( array( 'error' => 'User already existes'), 409 );    
-        }
+        $user->$provider = '';
+        $user->save();
         
+        return response()->json(array('token' => $this->createToken($user)));
     }
 
-    public function authenticate(Request $request)
-    {
-        $credentials = $request->only('email', 'password');
 
-        try {
-            // verify the credentials and create a token for the user
-            if (! $token = JWTAuth::attempt($credentials)) {
-                return response()->json(['error' => 'invalid_credentials'], 401);
-            }
-        } catch (JWTException $e) {
-            // something went wrong
-            return response()->json(['error' => 'could_not_create_token'], 500);
+    
+    public function login(Request $request){
+
+        $email = $request->input('email');
+        $password = $request->input('password');
+        $user = User::where('email', '=', $email)->first();
+        if (!$user)
+        {
+            return response()->json(['message' => 'Wrong email and/or password'], 401);
         }
-
-        // if no errors are encountered we can return a JWT
-        return response()->json(compact('token'));
+        if (Hash::check($password, $user->password))
+        {
+            unset($user->password);
+            return response()->json(['token' => $this->createToken($user)]);
+        }
+        else
+        {
+            return response()->json(['message' => 'Wrong email and/or password'], 401);
+        }
     }
+    
+    public function signup(Request $request){
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required'
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['message' => $validator->messages()], 400);
+        }
+        $user = new User;
+        $user->name = $request->input('name');
+        $user->email = $request->input('email');
+        $user->password = Hash::make($request->input('password'));
+        $user->save();
+        return response()->json(['token' => $this->createToken($user)]);
+    }
+
 }

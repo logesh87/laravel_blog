@@ -3,7 +3,7 @@
     'use strict';
 
     angular
-        .module('authApp')
+        .module('blogApp')
         .controller('UserController', UserController);  
 
     function UserController($http) {
